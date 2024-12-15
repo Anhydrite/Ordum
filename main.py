@@ -1,12 +1,13 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 import networkx as nx
 import matplotlib.pyplot as plt
 
 
 class TopologyNode:
-    def __init__(self, name: str, area: "TopologyArea"):
+    def __init__(self, name: str, area: "TopologyArea", type_: str = "Standard"):
         self.area = area
-        self.name = name
+        self.name = area.name + "-" + name
+        self.type = type_
         self.links = []
 
     def __str__(self):
@@ -23,23 +24,13 @@ class TopologyAreaInLink:
         self.target: TopologyNode = target
 
 
-class TopologyLink:
-    def __init__(
-        self, source: "TopologyArea", target: "TopologyArea", source_node: TopologyNode, target_node: TopologyNode
-    ):
-        self.name = source.name + "-" + target.name
-        self.source_area: TopologyArea = source
-        self.target_area: TopologyArea = target
-        self.source_node: TopologyNode = source_node
-        self.target_node: TopologyNode = target_node
-
-
 class TopologyArea:
     def __init__(self, global_topology: "GlobalTopology", name: str):
         self.global_topology = global_topology
         self.name = name
         self.nodes: List[TopologyNode] = []
         self.links: List[TopologyAreaInLink] = []
+        self.central_node = TopologyNode("Central", self)
 
     def add_node(self, node: TopologyNode) -> bool:
         if node not in self.nodes:
@@ -48,10 +39,12 @@ class TopologyArea:
 
         return False
 
-    def create_node(self, name: str) -> TopologyNode:
+    def create_node(self, name: str, link_to_central: bool = True) -> TopologyNode:
         new_node = TopologyNode(name, self)
         if new_node not in self.nodes:
             self.nodes.append(new_node)
+            if link_to_central:
+                self.create_link(self.central_node, new_node)
             return new_node
         raise ValueError(f"Node {name} already exists")
 
@@ -100,6 +93,34 @@ class TopologyArea:
         return neighbors
 
 
+class TopologyMediumNode:
+    def __init__(self, links: List[TopologyArea]):
+        self.links: List[TopologyArea] = links
+        concat_name = "-".join(map(lambda node: node.name, links))
+        self.name = f"Medium-{concat_name}"
+
+
+class TopologyLink:
+    def __init__(
+        self,
+        source: "TopologyArea",
+        target: "TopologyArea",
+        source_node: TopologyNode,
+        target_node: TopologyNode,
+        medium_node: Optional[TopologyMediumNode] = None,
+    ):
+        self.name = source.name + "-" + target.name
+        self.source_area: TopologyArea = source
+        self.target_area: TopologyArea = target
+        self.source_node: TopologyNode = source_node
+        self.target_node: TopologyNode = target_node
+        self.medium_node: Optional[TopologyMediumNode]
+        if medium_node:
+            self.medium_node = medium_node
+        else:
+            self.medium_node = None
+
+
 class GlobalTopology:
     def __init__(self):
         self.areas: List[TopologyArea] = []
@@ -118,18 +139,26 @@ class GlobalTopology:
                 return area
         raise ValueError(f"Area {name} not found")
 
-    def add_link(
+    def create_link(
         self,
         source_area: TopologyArea,
         target_area: TopologyArea,
-        source_node: TopologyNode,
-        target_node: TopologyNode,
+        source_node: Optional[TopologyNode] = None,
+        target_node: Optional[TopologyNode] = None,
+        create_medium_node: bool = True,
     ):
-        new_link = TopologyLink(source_area, target_area, source_node, target_node)
-        new_link2 = TopologyLink(target_area, source_area, target_node, source_node)
+        if not source_node:
+            source_node = source_area.central_node
+        if not target_node:
+            target_node = target_area.central_node
+
+        medium_node = None
+        if create_medium_node:
+            medium_node = TopologyMediumNode([source_area, target_area])
+
+        new_link = TopologyLink(source_area, target_area, source_node, target_node, medium_node)
         if new_link not in self.links:
             self.links.append(new_link)
-            self.links.append(new_link2)
             return True
         return False
 
@@ -157,9 +186,17 @@ class GlobalTopology:
         final_dict["area_links"] = {}
         for area in self.areas:
             for link in self.get_links_from_area(area):
-                final_dict["area_links"].setdefault(area.name, {}).setdefault(link.source_node.name, []).append(
-                    link.target_node.name
-                )
+                if link.medium_node:
+                    final_dict["area_links"].setdefault(area.name, {}).setdefault(link.source_node.name, []).append(
+                        link.medium_node.name
+                    )
+                    final_dict["area_links"].setdefault(area.name, {}).setdefault(link.medium_node.name, []).append(
+                        link.target_node.name
+                    )
+                else:
+                    final_dict["area_links"].setdefault(area.name, {}).setdefault(link.source_node.name, []).append(
+                        link.target_node.name
+                    )
 
         return final_dict
 
@@ -174,6 +211,8 @@ class TopologyGenerator:
     def show_from_dict(self, graph_dict):
         graph = nx.Graph()
         for area_name, area_dict in graph_dict.items():
+            if area_name == "area_links":
+                continue
             for node_name, node_neighbors in area_dict.items():
                 graph.add_node(node_name)
                 for neighbor in node_neighbors:
@@ -196,9 +235,9 @@ def main():
     a3 = area_a.create_node("A3")
     a4 = area_a.create_node("A4")
 
-    a1a2 = area_a.create_link(a1, a2)
-    a1a3 = area_a.create_link(a1, a3)
-    a1a4 = area_a.create_link(a1, a4)
+    # a1a2 = area_a.create_link(a1, a2)
+    # a1a3 = area_a.create_link(a1, a3)
+    # a1a4 = area_a.create_link(a1, a4)
 
     area_b = topo.create_area("B")
     b1 = area_b.create_node("B1")
@@ -206,15 +245,23 @@ def main():
     b3 = area_b.create_node("B3")
     b4 = area_b.create_node("B4")
 
-    b1b2 = area_b.create_link(b1, b2)
-    b1b3 = area_b.create_link(b1, b3)
-    b1b4 = area_b.create_link(b1, b4)
+    area_c = topo.create_area("C")
+    c1 = area_c.create_node("C1")
+    c2 = area_c.create_node("C2")
+    c3 = area_c.create_node("C3")
+    c4 = area_c.create_node("C4")
 
-    area_b.create_link(b1, b2)
-    area_b.create_link(b1, b3)
-    area_b.create_link(b1, b4)
+    # b1b2 = area_b.create_link(b1, b2)
+    # b1b3 = area_b.create_link(b1, b3)
+    # b1b4 = area_b.create_link(b1, b4)
 
-    topo.add_link(area_a, area_b, a1, b1)
+    # area_b.create_link(b1, b2)
+    # area_b.create_link(b1, b3)
+    # area_b.create_link(b1, b4)
+
+    topo.create_link(area_a, area_b)
+    topo.create_link(area_a, area_c)
+    topo.create_link(area_b, area_c, create_medium_node=False)
 
     data = topo.to_json()
     print(data)
