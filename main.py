@@ -1,4 +1,6 @@
+import random
 from typing import Dict, List, Optional
+from matplotlib.colors import hex2color
 import networkx as nx
 import matplotlib.pyplot as plt
 
@@ -205,9 +207,6 @@ class TopologyGenerator:
     def __init__(self) -> None:
         self.graph = nx.Graph()
 
-    def generate(self):
-        pass
-
     def show_from_dict(self, graph_dict):
         graph = nx.Graph()
         for area_name, area_dict in graph_dict.items():
@@ -223,7 +222,13 @@ class TopologyGenerator:
                 for target_node in target_nodes:
                     graph.add_edge(source_node, target_node)
 
-        a = nx.draw(graph, with_labels=True)
+        color_save = {}
+        colors = []
+        for node in graph.nodes:
+            colors.append(color_save.setdefault(node[0], [random.random(), random.random(), random.random()]))
+
+        plt.figure(figsize=(10, 10))
+        nx.draw(graph, node_color=colors, with_labels=True, font_size=18, width=2, node_size=800)
         plt.show()
 
 
