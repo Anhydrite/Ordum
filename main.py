@@ -41,55 +41,55 @@ class TopologyArea:
         self.nodes: List[TopologyNode] = []
         self.links: List[TopologyAreaInLink] = []
 
-    def add_node(self, node: TopologyNode):
+    def add_node(self, node: TopologyNode) -> bool:
         if node not in self.nodes:
             self.nodes.append(node)
             return True
 
         return False
 
-    def create_node(self, name: str):
+    def create_node(self, name: str) -> TopologyNode:
         new_node = TopologyNode(name, self)
         if new_node not in self.nodes:
             self.nodes.append(new_node)
             return new_node
         raise ValueError(f"Node {name} already exists")
 
-    def get_node(self, name: str):
+    def get_node(self, name: str) -> TopologyNode:
         for node in self.nodes:
             if node.name == name:
                 return node
-        return None
+        raise ValueError(f"Node {name} not found")
 
-    def remove_node(self, node: TopologyNode):
+    def remove_node(self, node: TopologyNode) -> bool:
         if node in self.nodes:
             self.nodes.remove(node)
             return True
         return False
 
-    def add_link(self, link: TopologyAreaInLink):
+    def add_link(self, link: TopologyAreaInLink) -> bool:
         if link not in self.links:
             self.links.append(link)
             return True
         return False
 
-    def create_link(self, source: TopologyNode, target: TopologyNode):
+    def create_link(self, source: TopologyNode, target: TopologyNode) -> TopologyAreaInLink:
         new_link = TopologyAreaInLink(source, target)
         new_link2 = TopologyAreaInLink(target, source)
         if new_link not in self.links:
             self.add_link(new_link)
             self.add_link(new_link2)
             return new_link
-        return None
+        raise ValueError(f"Link {source.name}-{target.name} already exists")
 
-    def remove_link(self, source: str, target: str):
+    def remove_link(self, source: str, target: str) -> bool:
         for link in self.links:
             if link.source == source and link.target == target:
                 self.links.remove(link)
                 return True
         return False
 
-    def get_neighbors(self, node: TopologyNode):
+    def get_neighbors(self, node: TopologyNode) -> List[TopologyNode]:
         neighbors = []
         for link in self.links:
             if link.source == node:
@@ -105,18 +105,18 @@ class GlobalTopology:
         self.areas: List[TopologyArea] = []
         self.links: List[TopologyLink] = []
 
-    def create_area(self, name: str):
+    def create_area(self, name: str) -> TopologyArea:
         new_area = TopologyArea(self, name)
         if new_area not in self.areas:
             self.areas.append(new_area)
             return new_area
         raise ValueError(f"Area {name} already exists")
 
-    def get_area(self, name: str):
+    def get_area(self, name: str) -> TopologyArea:
         for area in self.areas:
             if area.name == name:
                 return area
-        return None
+        raise ValueError(f"Area {name} not found")
 
     def add_link(
         self,
@@ -160,6 +160,7 @@ class GlobalTopology:
                 final_dict["area_links"].setdefault(area.name, {}).setdefault(link.source_node.name, []).append(
                     link.target_node.name
                 )
+
         return final_dict
 
 
