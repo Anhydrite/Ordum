@@ -1,8 +1,12 @@
+from code import interact
 import random
 from typing import Dict, List, Optional
 from matplotlib.colors import hex2color
 import networkx as nx
 import matplotlib.pyplot as plt
+
+from gns3_connector import GNS3Connector
+from interface import HyperInterface
 
 
 class TopologyNode:
@@ -127,6 +131,7 @@ class GlobalTopology:
     def __init__(self):
         self.areas: List[TopologyArea] = []
         self.links: List[TopologyLink] = []
+        self.medium_nodes: List[TopologyMediumNode] = []
 
     def create_area(self, name: str) -> TopologyArea:
         new_area = TopologyArea(self, name)
@@ -157,6 +162,7 @@ class GlobalTopology:
         medium_node = None
         if create_medium_node:
             medium_node = TopologyMediumNode([source_area, target_area])
+            self.medium_nodes.append(medium_node)
 
         new_link = TopologyLink(source_area, target_area, source_node, target_node, medium_node)
         if new_link not in self.links:
@@ -231,6 +237,27 @@ class TopologyGenerator:
         nx.draw(graph, node_color=colors, with_labels=True, font_size=18, width=2, node_size=800)
         plt.show()
 
+    def deploy(self, interface: HyperInterface, topology: GlobalTopology):
+        for area in topology.areas:
+            for node in area.nodes:
+                print(node)
+                interface.create_vpcs(node.name)
+            interface.create_switch(area.central_node.name)
+
+        for medium_node in topology.medium_nodes:
+            interface.create_router(medium_node.name)
+
+        for area in topology.areas:
+            for link in area.links:
+                interface.create_link(link.source.name, link.target.name)
+
+        for area_link in topology.links:
+            if area_link.medium_node:
+                interface.create_link(area_link.source_node.name, area_link.medium_node.name)
+                interface.create_link(area_link.medium_node.name, area_link.target_node.name)
+            else:
+                interface.create_link(area_link.source_node.name, area_link.target_node.name)
+
 
 def main():
     topo = GlobalTopology()
@@ -268,8 +295,14 @@ def main():
     topo.create_link(area_a, area_c)
     topo.create_link(area_b, area_c, create_medium_node=False)
 
+    connector = GNS3Connector("http://localhost:3080", "gns3", "gns3")
+    interface = HyperInterface(connector)
+
+    TopologyGenerator().deploy(interface, topo)
+
+    return
+
     data = topo.to_json()
-    print(data)
     TopologyGenerator().show_from_dict(data)
 
 
