@@ -1,12 +1,12 @@
 from pprint import pprint
 from sqlite3 import connect
-from typing import List
+from typing import Dict, List, Optional
 from numpy import full
 import requests
 
 from data_structure.computes import ComputeInput, ComputeOutput, ComputesResponse
-from data_structure.links import LinkNode, LinkRequest, LinkResponse
-from data_structure.nodes import Node, NodesResponse
+from data_structure.links import LinkNode, LinkRequest, LinkResponse, LinksResponse
+from data_structure.nodes import Node, NodesResponse, Port
 from data_structure.projects import LoadProjectResponse, Project, ProjectsResponse
 from data_structure.templates import Template, TemplatesResponse
 
@@ -58,8 +58,9 @@ class GNS3Connector:
         return self._make_request("GET", "/v2/gns3vm/engines")
 
     # Link Endpoints
-    def get_links(self, project_id):
-        return self._make_request("GET", f"/v2/projects/{project_id}/links")
+    def get_all_links(self, project_id: str) -> LinksResponse:
+        data = self._make_request("GET", f"/v2/projects/{project_id}/links")
+        return LinksResponse(links=[LinkResponse(**link) for link in data])
 
     def get_link(self, project_id, link_id):
         return self._make_request("GET", f"/v2/projects/{project_id}/links/{link_id}")
@@ -150,41 +151,87 @@ class GNS3Connector:
     def create_vpcs(self, name: str) -> Node:
         return self.create_node(self.project_id, self.compute_id, name, "vpcs", GNS3Connector.vpcs_symbol_path)
 
-    def create_link(self, first_node_name: str, second_node_name: str) -> LinkResponse:
+    def create_link(
+        self, first_node_name: str, second_node_name: str, first_node_port: LinkNode, second_node_port: LinkNode
+    ) -> LinkResponse | Dict:
         nodes_request: List[LinkNode] = []
-        for node_name in [first_node_name, second_node_name]:
-            node = self.get_node_by_name(node_name)
-            if not node:
-                raise ValueError(f"Must have a node but {node_name} didn't match any known node.")
-            nodes_request.append(
-                LinkNode(
-                    **{
-                        "node_id": node.node_id,
-                        "adapter_number": node.ports[0].adapter_number,
-                        "port_number": node.ports[0].port_number,
-                    }
-                )
+        node = self.get_node_by_name(first_node_name)
+        if not node:
+            raise ValueError(f"Must have a node but {first_node_name} didn't match any known node.")
+        nodes_request.append(
+            LinkNode(
+                **{
+                    "node_id": node.node_id,
+                    "adapter_number": first_node_port.adapter_number,
+                    "port_number": first_node_port.port_number,
+                }
             )
+        )
+        node = self.get_node_by_name(second_node_name)
+        if not node:
+            raise ValueError(f"Must have a node but {second_node_name} didn't match any known node.")
+        nodes_request.append(
+            LinkNode(
+                **{
+                    "node_id": node.node_id,
+                    "adapter_number": second_node_port.adapter_number,
+                    "port_number": second_node_port.port_number,
+                }
+            )
+        )
 
         link_data = LinkRequest(nodes=nodes_request).model_dump()
         data = self._make_request("POST", f"/v2/projects/{self.project_id}/links", json=link_data)
-        return LinkResponse(**data)
+        if data.get("message"):
+            return data
+        else:
+            return LinkResponse(**data)
 
     def create_router(self, router_name: str):
         return self.create_node(
             self.project_id, self.compute_id, router_name, "ethernet_switch", GNS3Connector.router_symbol_path
         )
 
+    def get_links_from_node(self, project_id: str, node_id: str) -> LinksResponse:
+        data = self._make_request("GET", f"/v2/projects/{project_id}/links")
+        links = [link for link in data if any(node["node_id"] == node_id for node in link["nodes"])]
+        return LinksResponse(links=[LinkResponse(**link) for link in links])
+
+    def get_free_port_for_node(self, project_id: str, node_name: str) -> Optional[Port]:
+        node = self.get_node_by_name(node_name)
+        # used_ports = {port["port_number"] for port in data["ports"]}
+        # max_ports = data.get("port_segment_size", 16)  # Default maximum ports
+        all_links = self.get_all_links(self.project_id)
+        node_links: List[LinkNode] = []
+        for link in all_links.links:
+            for link_node in link.nodes:
+                if link_node.node_id == node.node_id:
+                    node_links.append(link_node)
+
+        for port in node.ports:
+            if not node_links:
+                return port
+            for node_link in node_links:
+                if port.port_number == node_link.port_number and port.adapter_number == node_link.adapter_number:
+                    break
+            else:
+                return port
+
+        return None
+
 
 def main():
     connector = GNS3Connector("http://localhost:3080", "gns3", "gns3")
     # connector.create_switch("centralA")
-    connector.create_vpcs("A1")
-    connector.create_vpcs("A2")
-    connector.create_vpcs("A3")
-    connector.create_vpcs("A4")
 
-    connector.create_link("A1", "A2")
+    a = connector.get_free_port_for_node(connector.project_id, "A-Central")
+    print("tet", a)
+    # connector.create_vpcs("A1")
+    # connector.create_vpcs("A2")
+    # connector.create_vpcs("A3")
+    # connector.create_vpcs("A4")
+
+    # connector.create_link("A1", "A2")
 
     # Création d'un switch
     # connector.create_node(project_id, compute_id, "test", "ethernet_switch", ":/symbols/ethernet_switch.svg")

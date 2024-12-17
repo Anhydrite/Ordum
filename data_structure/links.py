@@ -16,3 +16,7 @@ class LinkResponse(BaseModel):
     link_id: str
     project_id: str
     nodes: List[LinkNode]
+
+
+class LinksResponse(BaseModel):
+    links: List[LinkResponse]
